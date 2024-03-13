@@ -1,8 +1,10 @@
+
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from facenet_pytorch import InceptionResnetV1, MTCNN, extract_face
 import os
+import torch 
 
 # Initialize the video capture object
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -16,10 +18,8 @@ mtcnn = MTCNN(keep_all=True, device=device)
 
 # Function to extract face embeddings
 def extract_face_embeddings(image):
-    boxes, _ = mtcnn.detect(image)
-
-    if boxes is not None:
-        faces = extract_face(image, boxes)
+    faces = mtcnn(image)
+    if faces is not None:
         embeddings = resnet(faces)
         return embeddings
     else:
@@ -27,7 +27,15 @@ def extract_face_embeddings(image):
 
 # Function to calculate cosine similarity between embeddings
 def cosine_similarity(embedding1, embedding2):
-    return np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
+    embedding1_np = embedding1.detach().numpy().flatten()  # Flatten the embedding
+    embedding2_np = embedding2.detach().numpy().flatten()  # Flatten the embedding
+    dot_product = np.dot(embedding1_np, embedding2_np)
+    norm1 = np.linalg.norm(embedding1_np)
+    norm2 = np.linalg.norm(embedding2_np)
+    cosine_similarity = dot_product / (norm1 * norm2)
+    return cosine_similarity
+
+
 
 # Function to load and preprocess images from a directory
 def load_images_and_extract_embeddings(directory):
