@@ -1,6 +1,6 @@
 # app.py
 
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, jsonify
 import cv2
 import numpy as np
 import torch
@@ -32,7 +32,7 @@ def cosine_similarity(embedding1, embedding2):
     norm1 = np.linalg.norm(embedding1_np)
     norm2 = np.linalg.norm(embedding2_np)
     cosine_similarity = dot_product / (norm1 * norm2)
-    return cosine_similarity
+    return float(cosine_similarity)  # Convert to float
 
 # Function to load and preprocess images from a directory
 def load_images_and_extract_embeddings(directory):
@@ -100,7 +100,7 @@ def detect():
                 match_found, match_percentage = check_matched_image(frame_embedding, stored_embeddings)
                 if match_found:
                     break
-    return render_template('result.html', match_found=match_found, match_percentage=match_percentage)
+    return jsonify({'match_found': match_found, 'match_percentage': match_percentage})
 
 if __name__ == '__main__':
     app.run(debug=True)
