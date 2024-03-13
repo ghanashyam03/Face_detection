@@ -1,15 +1,13 @@
+# app.py
 
+from flask import Flask, render_template, Response
 import cv2
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+import torch
 from facenet_pytorch import InceptionResnetV1, MTCNN, extract_face
 import os
-import torch 
 
-# Initialize the video capture object
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+app = Flask(__name__)
 
 # Load FaceNet model
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -34,8 +32,6 @@ def cosine_similarity(embedding1, embedding2):
     norm2 = np.linalg.norm(embedding2_np)
     cosine_similarity = dot_product / (norm1 * norm2)
     return cosine_similarity
-
-
 
 # Function to load and preprocess images from a directory
 def load_images_and_extract_embeddings(directory):
@@ -70,38 +66,50 @@ def process_frame(frame):
     frame_embedding = extract_face_embeddings(frame)
     if frame_embedding is not None:
         match_found = check_matched_image(frame_embedding, stored_embeddings)
-        if match_found:
-            return True
+        return match_found
     return False
 
-# Function to continuously process frames from the webcam
-def process_frames():
-    try:
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            while True:
-                ret, frame = cap.read()
-                if ret:
-                    future = executor.submit(process_frame, frame)
-                    match_found = future.result()
-                    
-                    if match_found:
-                        text = "MATCH"
-                        color = (0, 255, 0)  # Green color for match
-                    else:
-                        text = "NO MATCH"
-                        color = (0, 0, 255)  # Red color for no match
-                    
-                    # Add text to the frame
-                    cv2.putText(frame, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+# Initialize the video capture object
+cap = cv2.VideoCapture(0)
 
-                    cv2.imshow("video", frame)
+# Generator function to get frames from the webcam
+def webcam_gen():
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-                key = cv2.waitKey(1)
-                if key == ord("q"):
-                    break
-    finally:
-        cv2.destroyAllWindows()
-        cap.release()
+# Route for the home page
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-# Start processing frames
-process_frames()
+# Route for video feed
+def gen():
+    while True:
+        frame = webcam_gen()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + next(frame) + b'\r\n')
+
+# Route for video streaming
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+# Route for face detection
+@app.route('/detect')
+def detect():
+    match_found = False
+    while not match_found:
+        ret, frame = cap.read()
+        if ret:
+            match_found = process_frame(frame)
+    return "Match found!"
+
+if __name__ == '__main__':
+    app.run(debug=True)

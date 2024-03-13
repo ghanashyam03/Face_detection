@@ -1,68 +1,78 @@
+
 import cv2
 import numpy as np
-import psycopg2
-from PIL import Image as PILImage
-from imgbeddings import imgbeddings
 from concurrent.futures import ThreadPoolExecutor
+from facenet_pytorch import InceptionResnetV1, MTCNN, extract_face
+import os
+import torch 
 
 # Initialize the video capture object
 cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
-# Initialize imgbeddings object
-ibed = imgbeddings()
 
-# Function to calculate cosine similarity between two embeddings
+# Load FaceNet model
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+mtcnn = MTCNN(keep_all=True, device=device)
+
+# Function to extract face embeddings
+def extract_face_embeddings(image):
+    faces = mtcnn(image)
+    if faces is not None:
+        embeddings = resnet(faces)
+        return embeddings
+    else:
+        return None
+
+# Function to calculate cosine similarity between embeddings
 def cosine_similarity(embedding1, embedding2):
-    dot_product = np.dot(embedding1, embedding2)
-    norm1 = np.linalg.norm(embedding1)
-    norm2 = np.linalg.norm(embedding2)
+    embedding1_np = embedding1.detach().numpy().flatten()  # Flatten the embedding
+    embedding2_np = embedding2.detach().numpy().flatten()  # Flatten the embedding
+    dot_product = np.dot(embedding1_np, embedding2_np)
+    norm1 = np.linalg.norm(embedding1_np)
+    norm2 = np.linalg.norm(embedding2_np)
     cosine_similarity = dot_product / (norm1 * norm2)
     return cosine_similarity
 
+
+
+# Function to load and preprocess images from a directory
+def load_images_and_extract_embeddings(directory):
+    embeddings = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpg") or filename.endswith(".png"):
+            filepath = os.path.join(directory, filename)
+            image = cv2.imread(filepath)
+            if image is not None:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                embedding = extract_face_embeddings(image)
+                if embedding is not None:
+                    embeddings.append(embedding)
+    return embeddings
+
+# Load and preprocess embeddings of stored faces
+stored_embeddings = load_images_and_extract_embeddings('C:/Users/DELL/Desktop/ghana/ai_detected_images/stored-faces')
+
 # Function to check if there's a matched image and return it
-def check_matched_image(frame_embedding, threshold=0.90):
-    try:
-        # Connect to the PostgreSQL database
-        conn = psycopg2.connect("postgres://avnadmin:AVNS_nHR6CTga0AQ2C57qKkK@pg-23f81deb-harirenjith123face.a.aivencloud.com:20445/defaultdb?sslmode=require")
-
-        # Create a cursor object
-        cur = conn.cursor()
-
-        # Execute query to find images with embeddings similar to the current frame
-        cur.execute("SELECT embedding FROM pictures;")
-        rows = cur.fetchall()
-
-        for row in rows:
-            try:
-                db_embedding = np.fromstring(row[0][1:-1], dtype=np.float32, sep=',')  # Convert embedding string to numpy array
-                similarity_percentage = cosine_similarity(frame_embedding, db_embedding)
-                print("Similarity:", similarity_percentage)  # Debug statement
-                if similarity_percentage > threshold:
-                    return True  # Match found
-            except ValueError as e:
-                print("Error converting embedding to float:", e)
-                continue
-
-        cur.close()
-    except psycopg2.Error as e:
-        print("Unable to connect to the database:", e)
-    finally:
-        if conn:
-            conn.close()
-
+def check_matched_image(frame_embedding, stored_embeddings, threshold=0.6):
+    for stored_embedding in stored_embeddings:
+        similarity_percentage = cosine_similarity(frame_embedding, stored_embedding)
+        print("Similarity:", similarity_percentage)  # Debug statement
+        if similarity_percentage > threshold:
+            return True  # Match found
+    
     return False  # No match found
 
 # Function to process frames and check for matches
 def process_frame(frame):
-    # Calculate embeddings for the current frame
-    frame_embedding = ibed.to_embeddings(PILImage.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
-    match_found = check_matched_image(frame_embedding)
-    if match_found:
-        return True
-    else:
-        return False
+    # Extract face embeddings for the current frame
+    frame_embedding = extract_face_embeddings(frame)
+    if frame_embedding is not None:
+        match_found = check_matched_image(frame_embedding, stored_embeddings)
+        if match_found:
+            return True
+    return False
 
 # Function to continuously process frames from the webcam
 def process_frames():
