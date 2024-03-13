@@ -15,16 +15,23 @@
         <div class="video-container">
             <img id="video-feed" src="{{ url_for('video_feed') }}" alt="Video feed">
         </div>
+        <div id="result" style="display:none;">
+            <p id="match-status"></p>
+            <p id="match-percentage"></p>
+        </div>
     </div>
     <script>
         function startDetection() {
+            document.getElementById('result').style.display = 'block';
             fetch('/detect')
-                .then(response => {
-                    if (response.ok) {
-                        alert('Match found!');
+                .then(response => response.text())
+                .then(data => {
+                    if (data.includes('true')) {
+                        document.getElementById('match-status').innerText = 'Match found!';
                     } else {
-                        alert('No match found!');
+                        document.getElementById('match-status').innerText = 'No match found!';
                     }
+                    document.getElementById('match-percentage').innerText = 'Match percentage: ' + data.split(':')[1];
                 })
                 .catch(error => console.error('Error:', error));
         }

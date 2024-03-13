@@ -1,0 +1,23 @@
+<!-- templates/result.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Detection Result</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    {% if match_found %}
+        <div class="result-container">
+            <h2>Match found!</h2>
+            <p>Match percentage: {{ match_percentage }}</p>
+        </div>
+    {% else %}
+        <div class="result-container">
+            <h2>No match found!</h2>
+        </div>
+    {% endif %}
+</body>
+</html>

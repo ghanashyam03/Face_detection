@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from facenet_pytorch import InceptionResnetV1, MTCNN, extract_face
 import os
+import threading
 
 app = Flask(__name__)
 
@@ -56,18 +57,8 @@ def check_matched_image(frame_embedding, stored_embeddings, threshold=0.6):
         similarity_percentage = cosine_similarity(frame_embedding, stored_embedding)
         print("Similarity:", similarity_percentage)  # Debug statement
         if similarity_percentage > threshold:
-            return True  # Match found
-    
-    return False  # No match found
-
-# Function to process frames and check for matches
-def process_frame(frame):
-    # Extract face embeddings for the current frame
-    frame_embedding = extract_face_embeddings(frame)
-    if frame_embedding is not None:
-        match_found = check_matched_image(frame_embedding, stored_embeddings)
-        return match_found
-    return False
+            return True, similarity_percentage  # Match found
+    return False, 0  # No match found
 
 # Initialize the video capture object
 cap = cv2.VideoCapture(0)
@@ -88,28 +79,28 @@ def webcam_gen():
 def index():
     return render_template('index.html')
 
-# Route for video feed
-def gen():
-    while True:
-        frame = webcam_gen()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + next(frame) + b'\r\n')
-
 # Route for video streaming
 @app.route('/video_feed')
 def video_feed():
-    return Response(gen(),
+    return Response(webcam_gen(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 # Route for face detection
 @app.route('/detect')
 def detect():
+    global stored_embeddings
     match_found = False
+    match_percentage = 0
     while not match_found:
         ret, frame = cap.read()
         if ret:
-            match_found = process_frame(frame)
-    return "Match found!"
+            # Extract face embeddings for the current frame
+            frame_embedding = extract_face_embeddings(frame)
+            if frame_embedding is not None:
+                match_found, match_percentage = check_matched_image(frame_embedding, stored_embeddings)
+                if match_found:
+                    break
+    return render_template('result.html', match_found=match_found, match_percentage=match_percentage)
 
 if __name__ == '__main__':
     app.run(debug=True)
